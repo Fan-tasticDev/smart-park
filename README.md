@@ -28,4 +28,4 @@
 可直接部署到 Vercel / Netlify
 
 ## 在线演示
-[Vercel 部署链接]（稍后补上）
+[Vercel 部署链接](https://smart-park-five-jade.vercel.app/)
