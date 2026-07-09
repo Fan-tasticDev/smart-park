@@ -126,52 +126,87 @@ const deviceOption = ref<EChartsOption>({
   ],
 });
 
+// 各建筑能耗和安防数据
+const buildingDataMap: Record<
+  string,
+  { energy: number; security: { name: string; value: number }[] }
+> = {
+  主楼: {
+    energy: 72,
+    security: [
+      { name: "越界入侵", value: 15 },
+      { name: "异常徘徊", value: 8 },
+      { name: "烟雾告警", value: 5 },
+      { name: "设备离线", value: 3 },
+    ],
+  },
+  研发楼: {
+    energy: 45,
+    security: [
+      { name: "越界入侵", value: 5 },
+      { name: "异常徘徊", value: 3 },
+      { name: "烟雾告警", value: 2 },
+      { name: "设备离线", value: 1 },
+    ],
+  },
+  配套楼: {
+    energy: 30,
+    security: [
+      { name: "越界入侵", value: 8 },
+      { name: "异常徘徊", value: 6 },
+      { name: "烟雾告警", value: 4 },
+      { name: "设备离线", value: 5 },
+    ],
+  },
+};
+
 let timer: number;
 
 onMounted(() => {
+  handleBuildingClick("主楼");
   timer = window.setInterval(() => {
-    // 1. 更新客流趋势
+    // 1. 客流趋势不变（保持随机波动）
     const visitorSeries = visitorOption.value.series as any[];
-    if (visitorSeries && visitorSeries[0]) {
-      const visitorData = visitorSeries[0].data as number[];
-      for (let i = 0; i < visitorData.length; i++) {
-        visitorData[i] = Math.max(
-          0,
-          visitorData[i] + Math.floor(Math.random() * 40 - 20),
-        );
+    if (visitorSeries?.[0]) {
+      const data = visitorSeries[0].data as number[];
+      for (let i = 0; i < data.length; i++) {
+        data[i] = Math.max(0, data[i] + Math.floor(Math.random() * 40 - 20));
       }
       visitorOption.value = { ...visitorOption.value };
     }
 
-    // 2. 更新能耗
+    // 2. 能耗波动（在当前值基础上 ±5 内）
     const energySeries = energyOption.value.series as any[];
-    if (energySeries && energySeries[0] && energySeries[0].data) {
-      const newEnergy = Math.floor(50 + Math.random() * 50);
-      energySeries[0].data[0].value = newEnergy;
+    if (energySeries?.[0]?.data) {
+      let val = energySeries[0].data[0].value as number;
+      val = Math.max(
+        0,
+        Math.min(100, val + Math.floor(Math.random() * 10 - 5)),
+      );
+      energySeries[0].data[0].value = val;
       energyOption.value = { ...energyOption.value };
     }
 
-    // 3. 更新安防事件
+    // 3. 安防事件波动（保持类别不变，值随机增减）
     const securitySeries = securityOption.value.series as any[];
-    if (securitySeries && securitySeries[0] && securitySeries[0].data) {
-      const securityData = securitySeries[0].data as any[];
-      for (const item of securityData) {
+    if (securitySeries?.[0]?.data) {
+      for (const item of securitySeries[0].data) {
         item.value = Math.max(
           1,
-          item.value + Math.floor(Math.random() * 10 - 3),
+          item.value + Math.floor(Math.random() * 6 - 3),
         );
       }
       securityOption.value = { ...securityOption.value };
     }
 
-    // 4. 更新设备状态
+    // 4. 设备状态波动
     const deviceSeries = deviceOption.value.series as any[];
-    if (deviceSeries && deviceSeries[0]) {
-      const deviceData = deviceSeries[0].data as number[];
-      for (let i = 0; i < deviceData.length; i++) {
-        deviceData[i] = Math.min(
+    if (deviceSeries?.[0]) {
+      const data = deviceSeries[0].data as number[];
+      for (let i = 0; i < data.length; i++) {
+        data[i] = Math.min(
           100,
-          Math.max(60, deviceData[i] + Math.floor(Math.random() * 6 - 3)),
+          Math.max(60, data[i] + Math.floor(Math.random() * 6 - 3)),
         );
       }
       deviceOption.value = { ...deviceOption.value };
@@ -182,6 +217,27 @@ onMounted(() => {
 onUnmounted(() => {
   clearInterval(timer);
 });
+
+const handleBuildingClick = (name: string) => {
+  const data = buildingDataMap[name];
+  if (!data) {
+    return
+  }
+
+  // 更新能耗仪表盘
+  const energySeries = energyOption.value.series as any[];
+  if (energySeries?.[0]?.data) {
+    energySeries[0].data[0].value = data.energy;
+    energyOption.value = { ...energyOption.value };
+  }
+
+  // 更新安防饼图
+  const securitySeries = securityOption.value.series as any[];
+  if (securitySeries?.[0]) {
+    securitySeries[0].data = data.security;
+    securityOption.value = { ...securityOption.value };
+  }
+};
 </script>
 
 <template>
@@ -212,7 +268,7 @@ onUnmounted(() => {
 
         <!-- 中间 3D 场景区 -->
         <section class="flex-1 relative">
-          <ThreeScene />
+          <ThreeScene @building-click="handleBuildingClick" />
         </section>
 
         <!-- 右侧图表区 -->

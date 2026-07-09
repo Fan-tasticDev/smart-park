@@ -7,6 +7,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
+const emit = defineEmits<{
+  buildingClick: [name: string]
+}>()
+
 const container = ref<HTMLDivElement>()
 
 let scene: THREE.Scene
@@ -14,42 +18,37 @@ let camera: THREE.PerspectiveCamera
 let renderer: THREE.WebGLRenderer
 let controls: OrbitControls
 let animationId: number
+let buildings: THREE.Mesh[] = []
+let selectedBuilding: THREE.Mesh | null = null
 
 onMounted(() => {
   if (!container.value) return
 
   // 1. 场景
   scene = new THREE.Scene()
-  scene.background = new THREE.Color(0x0f172a) // 深蓝灰背景，与大屏协调
+  scene.background = new THREE.Color(0x0f172a)
 
   // 2. 相机
   const aspect = container.value.clientWidth / container.value.clientHeight
   camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000)
-  camera.position.set(8, 6, 8)
-  camera.lookAt(0, 0, 0)
+  camera.position.set(12, 8, 12)
+  camera.lookAt(0, 1, 0)
 
   // 3. 渲染器
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
   renderer.setSize(container.value.clientWidth, container.value.clientHeight)
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // 限制过高像素比，优化性能
-  renderer.shadowMap.enabled = true // 开启阴影
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.shadowMap.enabled = true
   container.value.appendChild(renderer.domElement)
 
   // 4. 光照
-  // 环境光提供基础亮度
   const ambientLight = new THREE.AmbientLight(0x404066)
   scene.add(ambientLight)
-
-  // 主光源方向光，产生立体感
   const dirLight = new THREE.DirectionalLight(0xffffff, 1)
   dirLight.position.set(10, 20, 10)
   dirLight.castShadow = true
-  dirLight.shadow.mapSize.width = 1024
-  dirLight.shadow.mapSize.height = 1024
   scene.add(dirLight)
-
-  // 辅助背光，让暗部不至于太黑
-  const backLight = new THREE.DirectionalLight(0x4488ff, 0.5)
+  const backLight = new THREE.DirectionalLight(0x4488ff, 0.4)
   backLight.position.set(-10, 5, -10)
   scene.add(backLight)
 
@@ -57,36 +56,87 @@ onMounted(() => {
   controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
   controls.dampingFactor = 0.05
-  controls.maxPolarAngle = Math.PI / 2 // 限制上下旋转角度，保持俯视视角
-  controls.target.set(0, 0, 0)
+  controls.maxPolarAngle = Math.PI / 2.2
+  controls.target.set(0, 1.5, 0)
   controls.update()
 
-  // 6. 添加园区占位模型：一个带描边的半透明立方体，代表建筑
-  const geometry = new THREE.BoxGeometry(3, 2, 3)
-  const material = new THREE.MeshPhongMaterial({
-    color: 0x3b82f6,
-    transparent: true,
-    opacity: 0.8,
-    emissive: new THREE.Color(0x0a2a5e),
-    shininess: 30,
-  })
-  const building = new THREE.Mesh(geometry, material)
-  building.position.y = 1 // 让底部对齐地面
-  building.castShadow = true
-  building.receiveShadow = true
-  scene.add(building)
-
-  // 添加发光边框
-  const edges = new THREE.EdgesGeometry(geometry)
-  const lineMat = new THREE.LineBasicMaterial({ color: 0x60a5fa })
-  const wireframe = new THREE.LineSegments(edges, lineMat)
-  building.add(wireframe)
-
-  // 地面网格，增强空间感
-  const gridHelper = new THREE.GridHelper(10, 20, 0x334155, 0x1e293b)
+  // 6. 地面网格
+  const gridHelper = new THREE.GridHelper(12, 20, 0x334155, 0x1e293b)
   scene.add(gridHelper)
 
-  // 7. 渲染循环
+  // 7. 创建多栋建筑
+  const buildingData = [
+    { name: '主楼', pos: [0, 0, 0], size: [2.5, 3, 2.5], color: 0x3b82f6 },
+    { name: '研发楼', pos: [-4.5, 0, -1.5], size: [2, 2.5, 2], color: 0x10b981 },
+    { name: '配套楼', pos: [4, 0, 2], size: [1.8, 1.8, 1.8], color: 0xf59e0b },
+  ]
+
+  buildingData.forEach(({ name, pos, size, color }) => {
+    const geometry = new THREE.BoxGeometry(size[0], size[1], size[2])
+    const material = new THREE.MeshPhongMaterial({
+      color,
+      transparent: true,
+      opacity: 0.85,
+      emissive: new THREE.Color(color).multiplyScalar(0.3),
+      shininess: 20,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.position.set(pos[0], pos[1] + size[1] / 2, pos[2])
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    mesh.name = name
+
+    // 添加描边
+    const edges = new THREE.EdgesGeometry(geometry)
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x94a3b8 })
+    const wireframe = new THREE.LineSegments(edges, lineMat)
+    mesh.add(wireframe)
+
+    scene.add(mesh)
+    buildings.push(mesh)
+  })
+
+  // 8. 点击交互（射线检测）
+  const raycaster = new THREE.Raycaster()
+  const mouse = new THREE.Vector2()
+
+const onClick = (event: MouseEvent) => {
+  if (!container.value) return
+  const rect = container.value.getBoundingClientRect()
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+  raycaster.setFromCamera(mouse, camera)
+  // 递归检测子对象，这样可以点到建筑的描边也能识别
+  const intersects = raycaster.intersectObjects(buildings, true)
+
+  if (intersects.length > 0) {
+    // 向上查找，直到找到属于 buildings 的 Mesh
+    let target: THREE.Object3D | null = intersects[0].object
+    while (target && !buildings.includes(target as THREE.Mesh)) {
+      target = target.parent
+    }
+    if (!target) return
+
+    const object = target as THREE.Mesh
+
+    // 取消上一个高亮
+    if (selectedBuilding && selectedBuilding !== object) {
+      const prevEdges = selectedBuilding.children[0] as THREE.LineSegments
+      if (prevEdges) (prevEdges.material as THREE.LineBasicMaterial).color.set(0x94a3b8)
+    }
+    // 设置新高亮
+    const edges = object.children[0] as THREE.LineSegments
+    if (edges) (edges.material as THREE.LineBasicMaterial).color.set(0xfacc15) // 亮黄色高亮
+    selectedBuilding = object
+
+    emit('buildingClick', object.name)
+  }
+}
+
+  container.value.addEventListener('click', onClick)
+
+  // 9. 渲染循环
   const animate = () => {
     animationId = requestAnimationFrame(animate)
     controls.update()
@@ -94,7 +144,6 @@ onMounted(() => {
   }
   animate()
 
-  // 8. 窗口大小调整
   window.addEventListener('resize', onResize)
 })
 
